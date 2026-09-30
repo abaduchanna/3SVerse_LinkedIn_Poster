@@ -43,7 +43,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 import tkinter.font as tkfont
 
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 
 # ── Brand tokens: the 3sverse.com dark-hero palette (same as License
 # Studio — canvas hsl(250 28% 3%) · card hsl(250 20% 6%) · warm-white
@@ -717,6 +717,24 @@ class App:
         root.geometry("1000x760")
         root.minsize(880, 620)
         _probe_fonts(root)
+        try:
+            ico = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "3sverse_icon.ico")
+            if os.path.exists(ico):
+                root.iconbitmap(default=ico)
+        except Exception:
+            pass
+
+        # Brand background (the website hero ring + footer orb),
+        # drawn on a canvas that sits BEHIND every widget — same
+        # artwork and composition as License Studio.
+        self._bg_canvas = tk.Canvas(root, bg=BG, highlightthickness=0,
+                                    bd=0)
+        self._bg_canvas.place(x=0, y=0, relwidth=1, relheight=1)
+        self._bg_canvas.bind("<Configure>", lambda _e: self._draw_bg())
+        self._bg_imgs = []
+        self._load_bg_assets()
+
         self._build_header()
         self._build_body()
         self._build_footer()
@@ -727,6 +745,39 @@ class App:
         last = self.store.cfg.get("last_folder")
         if last and os.path.isdir(last):
             self.root.after(300, lambda: self.load_folder(last))
+
+    # ── brand background (same ring/orb artwork as License Studio) ──
+    def _load_bg_assets(self):
+        base = os.path.dirname(os.path.abspath(__file__))
+        for name in ("bg_ring.png", "bg_orb.png"):
+            try:
+                self._bg_imgs.append(
+                    tk.PhotoImage(file=os.path.join(base, name)))
+            except Exception:
+                pass          # asset missing -> fallback rings drawn
+
+    def _draw_bg(self):
+        """Redraw the brand art on resize. The ring hugs the right
+        edge half off-canvas and the orb tucks into the bottom-left
+        corner - same composition as License Studio / the website."""
+        c = self._bg_canvas
+        c.delete("all")
+        w = c.winfo_width() or 1000
+        h = c.winfo_height() or 760
+        ring = self._bg_imgs[0] if self._bg_imgs else None
+        orb = self._bg_imgs[1] if len(self._bg_imgs) > 1 else None
+        if ring is not None:
+            c.create_image(w + ring.width() * 0.16, h * 0.44,
+                           image=ring, anchor="center")
+        if orb is not None:
+            c.create_image(-orb.width() * 0.22, h - orb.height() * 0.42,
+                           image=orb, anchor="center")
+        if len(self._bg_imgs) < 2:
+            # graceful fallback: thin concentric rings, right side
+            cy = h * 0.46
+            for r in (120, 185, 250, 315):
+                c.create_oval(w - r, cy - r, w + r, cy + r,
+                              outline=BORDER, width=1)
 
     # ── header (center-anchored hero — version NOT here) ─────────────
     def _build_header(self):

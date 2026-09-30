@@ -56,6 +56,8 @@ jobs:
           --python-flag=no_asserts,no_docstrings
           --include-data-file=3sverse_icon.ico=3sverse_icon.ico
           --include-data-file=3sverse_logo_header.png=3sverse_logo_header.png
+          --include-data-file=bg_ring.png=bg_ring.png
+          --include-data-file=bg_orb.png=bg_orb.png
           --output-dir=dist linkedin_poster.py
 
       - name: Rename exe
