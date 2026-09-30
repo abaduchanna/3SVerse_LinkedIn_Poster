@@ -1,0 +1,73 @@
+name: Build LinkedIn Poster
+
+# Seller-only tool - builds 3SVerse LinkedIn Poster as a STANDALONE app
+# folder (zipped) and attaches it to a release in this PRIVATE repo.
+# Standalone (onedir) is deliberate: a onefile exe self-extracts into
+# %TEMP% at runtime, which antivirus static AI treats as packer
+# behavior even when the app is perfectly legitimate.
+# Developed by www.3SVerse.com (c) 2026
+
+on:
+  push:
+    branches: [main]
+    paths: ["linkedin_poster.py", ".github/workflows/build-poster.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Single source of truth: VERSION in linkedin_poster.py drives the
+      # exe metadata, the zip name AND the release tag.
+      - name: Read version from linkedin_poster.py
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path linkedin_poster.py -Pattern 'VERSION\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+          echo "VERSION=$v" >> $env:GITHUB_ENV
+          echo "building LinkedIn Poster $v"
+
+      - name: Install build deps
+        run: python -m pip install nuitka
+
+      - name: Build with Nuitka (standalone - no onefile self-extraction)
+        shell: cmd
+        run: >
+          python -m nuitka --standalone --assume-yes-for-downloads
+          --enable-plugin=tk-inter
+          --windows-console-mode=disable
+          --windows-icon-from-ico=3sverse_icon.ico
+          --company-name="3S Verse"
+          --product-name="3SVerse LinkedIn Poster"
+          --file-version="${{ env.VERSION }}.0" --product-version="${{ env.VERSION }}.0"
+          --file-description="3SVerse LinkedIn Poster (campaign scheduler + publisher)"
+          --include-data-file=3sverse_icon.ico=3sverse_icon.ico
+          --include-data-file=3sverse_logo_header.png=3sverse_logo_header.png
+          --output-dir=dist linkedin_poster.py
+
+      - name: Rename exe + zip standalone folder
+        shell: pwsh
+        run: |
+          Move-Item dist\linkedin_poster.dist\linkedin_poster.exe dist\linkedin_poster.dist\3SVerse_LinkedIn_Poster.exe -Force
+          Compress-Archive -Path dist\linkedin_poster.dist\* -DestinationPath dist\3SVerse_LinkedIn_Poster-${{ env.VERSION }}-standalone.zip -Force
+
+      # NOTE: no actions/upload-artifact here - artifact storage quota
+      # would block the build. Release assets do NOT count against it.
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: poster-v${{ env.VERSION }}
+          name: 3SVerse LinkedIn Poster ${{ env.VERSION }}
+          files: |
+            dist/3SVerse_LinkedIn_Poster-${{ env.VERSION }}-standalone.zip
