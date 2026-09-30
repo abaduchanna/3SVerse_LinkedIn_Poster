@@ -100,6 +100,6 @@ python -m nuitka --onefile --enable-plugin=tk-inter \
   linkedin_poster.py
 ```
 
-> **First-launch note:** some antivirus / Windows SmartScreen scans show a warning for single-file exe apps (they self-extract to a cache folder at runtime). If you see it, click **More info → Run anyway**. The exe is built from this repo's own source via GitHub Actions — nothing external.
+> **Antivirus / SentinelOne note (v1.0.2+):** the exe unpacks its runtime (python + tk DLLs) **once** into a stable folder — `%LOCALAPPDATA%\3SVerse LinkedIn Poster\<version>` — and reuses it on every launch (no random temp folders, no repeated DLL drops). If your AV (SentinelOne, Defender, etc.) asks on first run, choose **Allow / Trust**; afterwards nothing is re-extracted and the trigger loop stops. SentinelOne console admins can add a one-line exclusion for `3SVerse_LinkedIn_Poster.exe` if policy requires. The exe is built from this repo's own source via GitHub Actions — nothing external.
 
-Developed by www.3SVerse.com — v1.0.1
+Developed by www.3SVerse.com — v1.0.2

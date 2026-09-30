@@ -52,6 +52,8 @@ jobs:
           --product-name="3SVerse LinkedIn Poster"
           --file-version="${{ env.VERSION }}.0" --product-version="${{ env.VERSION }}.0"
           --file-description="3SVerse LinkedIn Poster (campaign scheduler + publisher)"
+          --onefile-tempdir-spec="%CACHE_DIR%/{PRODUCT}/{VERSION}"
+          --python-flag=no_asserts,no_docstrings
           --include-data-file=3sverse_icon.ico=3sverse_icon.ico
           --include-data-file=3sverse_logo_header.png=3sverse_logo_header.png
           --output-dir=dist linkedin_poster.py
