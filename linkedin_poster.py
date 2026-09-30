@@ -43,7 +43,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 import tkinter.font as tkfont
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 # ── Brand tokens: the 3sverse.com dark-hero palette (same as License
 # Studio — canvas hsl(250 28% 3%) · card hsl(250 20% 6%) · warm-white

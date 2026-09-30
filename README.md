@@ -91,13 +91,15 @@ Posts go through LinkedIn's **official REST API** with your own developer-app to
 
 ## Build
 
-GitHub Actions (`.github/workflows/build-poster.yml`) builds a Nuitka **standalone** Windows folder → zips it → attaches to the release `poster-v<VERSION>` (VERSION is read from `linkedin_poster.py`). Release assets are the distribution — no artifact storage used.
+GitHub Actions (`.github/workflows/build-poster.yml`) builds a **single portable .exe** with Nuitka `--onefile` and attaches the exe itself to the release `poster-v<VERSION>` (VERSION is read from `linkedin_poster.py`). No zip folder — the release asset IS the runnable exe. Release assets are the distribution — no artifact storage used.
 
 ```
-python -m nuitka --standalone --enable-plugin=tk-inter \
+python -m nuitka --onefile --enable-plugin=tk-inter \
   --windows-console-mode=disable --windows-icon-from-ico=3sverse_icon.ico \
   --include-data-file=3sverse_logo_header.png=3sverse_logo_header.png \
   linkedin_poster.py
 ```
 
-Developed by www.3SVerse.com — v1.0.0
+> **First-launch note:** some antivirus / Windows SmartScreen scans show a warning for single-file exe apps (they self-extract to a cache folder at runtime). If you see it, click **More info → Run anyway**. The exe is built from this repo's own source via GitHub Actions — nothing external.
+
+Developed by www.3SVerse.com — v1.0.1
