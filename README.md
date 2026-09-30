@@ -36,6 +36,7 @@ On the app's **Products** tab:
 - **Sign In with LinkedIn using OpenID Connect** — instant; identifies you (`openid profile`). Needed for **Connect** and **Test connection**.
 - **Share on LinkedIn** — instant.
 - **Community Management API** — **required to post to your Page** (`r_organization_social` + `w_organization_social`). LinkedIn reviews the request (usually 1–5 days) — Page posting works only after it shows **Approved**.
+  ⚠️ **Request button grayed out / "closed" on your app?** That's LinkedIn's rule, not a fault: the Community Management API request is only accepted on a **new app that has no other products**. Create a second app (same company page), verify it, and request it there — then use the new app's Client ID + Secret in the Poster.
 
 > The Poster requests the full scope set when connecting. If your app doesn't have the org products yet, it automatically retries with the basic sign-in scopes so Connect still succeeds — Page posting unlocks the moment LinkedIn approves **Community Management API** (just connect again afterwards).
 
@@ -94,6 +95,10 @@ Posts go through LinkedIn's **official REST API** with your own developer-app to
 
 **“Scope … is not authorized for your application”** (on Connect) — your LinkedIn app is missing the product that scope belongs to. Fix: Products tab → request **Community Management API** (the org scopes) and add **Sign In with LinkedIn using OpenID Connect** (instant). The Poster auto-retries with basic scopes so it still connects; Page posting unlocks once LinkedIn approves Community Management API (connect again afterwards).
 
+**Community Management API request is grayed out / closed** — expected when the app already has other products (LinkedIn only allows the request on a brand-new app with no other products). Create a new app (same company page) → verify → request it there → use the new credentials in the Poster. Meanwhile you can test Page posting end-to-end on LinkedIn's sandbox pages: Org ID **2414183** (DevTestCo) or **6177438** (Test University) — posts land on LinkedIn's test pages, not yours.
+
+**“Posts API failed …”** — the Poster publishes through the versioned **Posts API** (`/rest/posts`, header `LinkedIn-Version: 202607`) and automatically falls back to the legacy `ugcPosts` endpoint if your app hasn't been migrated yet; the error text shows both attempts.
+
 **“GET https://api.linkedin.com/v2/userinfo failed: Remote end closed connection without response”** (on Test connection) — a network-level drop (AV/proxy/VPN or a transient LinkedIn hiccup). The Poster now retries 3× automatically. If it persists: allow `3SVerse_LinkedIn_Poster.exe` in your AV, disable VPN/proxy for the test, then run **Test connection** again.
 
 **403 on Test / “Cannot resolve member identity”** — add **Sign In with LinkedIn using OpenID Connect** on the Products tab (instant) and connect again.
@@ -111,4 +116,4 @@ python -m nuitka --onefile --enable-plugin=tk-inter \
 
 > **Antivirus / SentinelOne note (v1.0.2+):** the exe unpacks its runtime (python + tk DLLs) **once** into a stable folder — `%LOCALAPPDATA%\3SVerse LinkedIn Poster\<version>` — and reuses it on every launch (no random temp folders, no repeated DLL drops). If your AV (SentinelOne, Defender, etc.) asks on first run, choose **Allow / Trust**; afterwards nothing is re-extracted and the trigger loop stops. SentinelOne console admins can add a one-line exclusion for `3SVerse_LinkedIn_Poster.exe` if policy requires. The exe is built from this repo's own source via GitHub Actions — nothing external.
 
-Developed by www.3SVerse.com — v1.0.4
+Developed by www.3SVerse.com — v1.0.5

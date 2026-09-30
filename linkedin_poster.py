@@ -43,7 +43,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 import tkinter.font as tkfont
 
-VERSION = "1.0.4"
+VERSION = "1.0.5"
 
 # ── Brand tokens: the 3sverse.com dark-hero palette (same as License
 # Studio — canvas hsl(250 28% 3%) · card hsl(250 20% 6%) · warm-white
@@ -254,6 +254,17 @@ class LinkedInError(Exception):
     pass
 
 
+_LAST_HEADERS = {}
+
+
+def _last_header(name):
+    """Case-insensitive lookup of the most recent response's header."""
+    for k, v in _LAST_HEADERS.items():
+        if k.lower() == (name or "").lower():
+            return v
+    return None
+
+
 def _http(url, method="GET", headers=None, data=None, timeout=45,
           attempts=3):
     """Thin urllib wrapper → (status, text, bytes).
@@ -262,7 +273,10 @@ def _http(url, method="GET", headers=None, data=None, timeout=45,
     response", timeouts, resets — LinkedIn drops non-browser clients
     occasionally, AV/proxies do too) are retried with a small backoff.
     HTTP error responses (4xx/5xx) are returned as-is, never retried.
+    Response headers are kept in _LAST_HEADERS (restli create calls
+    return the new entity URN in x-restli-id).
     """
+    global _LAST_HEADERS
     req = urllib.request.Request(url, method=method)
     req.add_header("User-Agent", UA)
     req.add_header("Accept", "application/json")
@@ -275,8 +289,10 @@ def _http(url, method="GET", headers=None, data=None, timeout=45,
     for attempt in range(max(1, attempts)):
         try:
             with urllib.request.urlopen(req, body, timeout=timeout) as r:
+                _LAST_HEADERS = dict(r.headers.items())
                 return r.status, r.read().decode("utf-8", "replace"), None
         except urllib.error.HTTPError as e:
+            _LAST_HEADERS = dict(e.headers.items()) if e.headers else {}
             raw = e.read()
             try:
                 return e.code, raw.decode("utf-8", "replace"), None
@@ -295,7 +311,7 @@ def _api_headers(token):
         "Authorization": "Bearer " + token,
         "X-Restli-Protocol-Version": "2.0.0",
         "Content-Type": "application/json",
-        "LinkedIn-Version": "202405",
+        "LinkedIn-Version": "202607",   # 202510 sunset 2026-10-15
     }
 
 
@@ -420,7 +436,46 @@ class LinkedInClient:
     # -- post ------------------------------------------------------------
     def create_org_post(self, text, asset_urn=None, org_urn=None,
                         person_urn=None, link=None):
+        """Publish via the versioned Posts API (/rest/posts) — the
+        official replacement for the legacy ugcPosts endpoint. If the
+        Posts API is unavailable on the caller's app (older app /
+        version), falls back to /v2/ugcPosts automatically."""
         org_urn = org_urn or ("urn:li:organization:" + self.org_id)
+        h = _api_headers(self.token)
+        payload = {
+            "author": org_urn,
+            "commentary": text,
+            "visibility": "PUBLIC",
+            "distribution": {"feedDistribution": "MAIN_FEED",
+                             "targetEntities": [],
+                             "thirdPartyDistributionChannels": []},
+            "lifecycleState": "PUBLISHED",
+            "isReshareDisabledByAuthor": False,
+        }
+        if asset_urn:
+            payload["content"] = {"media": {"id": asset_urn}}
+        elif link:
+            payload["content"] = {"article": {"source": link}}
+        st, txt, _ = _http(LI_API + "/rest/posts", method="POST",
+                           headers=h, data=payload)
+        if st in (200, 201):
+            pid = ""
+            try:
+                pid = (json.loads(txt) or {}).get("id") or ""
+            except Exception:
+                pass
+            return pid or _last_header("x-restli-id") or ""
+        st2, txt2, pid = self._create_org_post_legacy(
+            text, asset_urn, org_urn, link)
+        if pid is not None:
+            return pid
+        raise LinkedInError(
+            "Post failed. Posts API (HTTP %s): %s | ugcPosts (HTTP %s): %s"
+            % (st, txt[:200], st2, txt2[:200]))
+
+    def _create_org_post_legacy(self, text, asset_urn, org_urn, link):
+        """Legacy ugcPosts endpoint → (status, errtext, post_id|None).
+        post_id is None only when the call failed."""
         media_cat = "IMAGE" if asset_urn else (
             "ARTICLE" if link else "NONE")
         share = {"shareCommentary": {"text": text},
@@ -441,10 +496,13 @@ class LinkedInClient:
         h = _api_headers(self.token)
         st, txt, _ = _http(LI_API + "/v2/ugcPosts", method="POST",
                            headers=h, data=payload)
-        if st not in (200, 201):
-            raise LinkedInError("ugcPosts failed (HTTP %s): %s"
-                                % (st, txt[:400]))
-        return (json.loads(txt) or {}).get("id", "")
+        if st in (200, 201):
+            try:
+                pid = (json.loads(txt) or {}).get("id", "")
+            except Exception:
+                pid = ""
+            return st, txt, pid or ""
+        return st, txt, None
 
     def post_image(self, image_path, text):
         """Full pipeline: register → upload → publish. Returns post urn."""
@@ -725,15 +783,28 @@ def _is_scope_err(err):
 
 SCOPE_HELP = (
     "Your LinkedIn developer app is missing a PRODUCT.\n\n"
-    "To post to your Company/Page add:\n"
-    "  “Community Management API” — Products tab → Request access\n"
-    "  (LinkedIn reviews it, usually 1–5 days; Page posting works "
-    "only after approval)\n\n"
-    "Instant products you can add right now:\n"
-    "  • Sign In with LinkedIn using OpenID Connect — fixes "
-    "Connect/Test\n"
-    "  • Share on LinkedIn\n\n"
-    "Go to: developer.linkedin.com/dashboard → your app → Products.")
+    "PAGE posting needs “Community Management API”. LinkedIn only "
+    "accepts that request on a NEW app that has NO other products — "
+    "on your existing app the request button looks grayed out / "
+    "closed. This is LinkedIn's rule, not an error on your side.\n\n"
+    "Fix (official LinkedIn route):\n"
+    "  1. developer.linkedin.com/dashboard → Create app — pick the "
+    "same company page (you are its admin) → verify the app via "
+    "the page\n"
+    "  2. On the NEW app: Products tab → Request “Community "
+    "Management API” (available there because the app has no other "
+    "products; approval usually 1–5 days)\n"
+    "  3. Auth tab → add redirect URL  http://localhost:8529/callback"
+    "  → copy the new Client ID + Secret into 3SVerse Settings → "
+    "Connect again\n\n"
+    "Instant products on your CURRENT app (Connect + personal "
+    "posting): “Sign In with LinkedIn using OpenID Connect”, "
+    "“Share on LinkedIn”.\n\n"
+    "While approval is pending you can test PAGE posting end-to-end "
+    "on LinkedIn's sandbox pages — Org ID 2414183 (DevTestCo) or "
+    "6177438 (Test University) — posts land on LinkedIn's test "
+    "pages, not on your page.\n\n"
+    "Go to: developer.linkedin.com/dashboard → your apps → Products.")
 
 
 def _scope_nag(parent, err):
@@ -1430,15 +1501,17 @@ class App:
             "1.  linkedin.com/developers → Create app (you are the 3S "
             "Verse page admin) → verify the app via the page.\n"
             "2.  Products tab → add “Sign In with LinkedIn using OpenID "
-            "Connect” + “Share on LinkedIn” (instant). To post to your "
-            "PAGE also request “Community Management API” (LinkedIn "
-            "approval ~1–5 days).\n"
+            "Connect” + “Share on LinkedIn” (instant). For PAGE "
+            "posting: LinkedIn only accepts “Community Management API” "
+            "on a NEW app with no other products — create one (same "
+            "page) and request it there (approval ~1–5 days).\n"
             "3.  Auth tab → Client ID + Client Secret → Redirect URLs: "
             "add  http://localhost:8529/callback\n"
             "4.  Organization ID: open your page → linkedin.com/company/"
             "3sverse → Ctrl+U (view source) → search “urn:li:organization:"
             "” → the number after it is the Organization ID. (Or connect "
-            "first and use “Find Org ID (vanity)” above.)\n"
+            "first and use “Find Org ID (vanity)” above.) While approval "
+            "is pending, Org ID 2414183 (DevTestCo) works for testing.\n"
             "5.  Paste everything here → Connect → Test → Save.")
         tk.Label(helpbox, text=steps, bg=PANEL, fg=DIM,
                  font=(MONO, 8), justify="left", wraplength=560).pack(
