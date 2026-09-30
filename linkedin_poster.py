@@ -43,7 +43,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 import tkinter.font as tkfont
 
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 
 # ── Brand tokens: the 3sverse.com dark-hero palette (same as License
 # Studio — canvas hsl(250 28% 3%) · card hsl(250 20% 6%) · warm-white
@@ -244,6 +244,9 @@ LI_TOKEN = "https://www.linkedin.com/oauth/v2/accessToken"
 LI_API = "https://api.linkedin.com"
 REDIRECT = "http://localhost:8529/callback"
 OAUTH_SCOPES = "openid profile r_organization_social w_organization_social"
+BASIC_SCOPES = "openid profile"          # fallback when the LinkedIn app
+                                         # lacks the Community Management
+                                         # API product (org scopes)
 UA = "3SVerse-LinkedInPoster/%s (seller tool)" % VERSION
 
 
@@ -251,27 +254,40 @@ class LinkedInError(Exception):
     pass
 
 
-def _http(url, method="GET", headers=None, data=None, timeout=45):
-    """Thin urllib wrapper → (status, text, bytes)."""
+def _http(url, method="GET", headers=None, data=None, timeout=45,
+          attempts=3):
+    """Thin urllib wrapper → (status, text, bytes).
+
+    Transient network failures ("Remote end closed connection without
+    response", timeouts, resets — LinkedIn drops non-browser clients
+    occasionally, AV/proxies do too) are retried with a small backoff.
+    HTTP error responses (4xx/5xx) are returned as-is, never retried.
+    """
     req = urllib.request.Request(url, method=method)
     req.add_header("User-Agent", UA)
+    req.add_header("Accept", "application/json")
     for k, v in (headers or {}).items():
         req.add_header(k, v)
     body = None
     if data is not None:
         body = data if isinstance(data, bytes) else \
             json.dumps(data).encode("utf-8")
-    try:
-        with urllib.request.urlopen(req, body, timeout=timeout) as r:
-            return r.status, r.read().decode("utf-8", "replace"), None
-    except urllib.error.HTTPError as e:
-        raw = e.read()
+    for attempt in range(max(1, attempts)):
         try:
-            return e.code, raw.decode("utf-8", "replace"), None
-        except Exception:
-            return e.code, "", raw
-    except Exception as e:  # URLError, timeout…
-        raise LinkedInError("%s %s failed: %s" % (method, url, e))
+            with urllib.request.urlopen(req, body, timeout=timeout) as r:
+                return r.status, r.read().decode("utf-8", "replace"), None
+        except urllib.error.HTTPError as e:
+            raw = e.read()
+            try:
+                return e.code, raw.decode("utf-8", "replace"), None
+            except Exception:
+                return e.code, "", raw
+        except Exception as e:  # URLError, timeout, connection reset…
+            if attempt + 1 >= max(1, attempts):
+                raise LinkedInError("%s %s failed: %s"
+                                    % (method, url, e))
+            time.sleep(1.5 * (attempt + 1))
+    raise LinkedInError("%s %s failed: exhausted retries" % (method, url))
 
 
 def _api_headers(token):
@@ -294,19 +310,23 @@ class LinkedInClient:
     # -- identity / org -------------------------------------------------
     def member_urn(self):
         h = _api_headers(self.token)
-        st, txt, _ = _http(LI_API + "/v2/userinfo", headers=h)
-        if st == 200:
-            sub = (json.loads(txt) or {}).get("sub")
-            if sub:
-                return "urn:li:person:" + sub
-        st, txt, _ = _http(LI_API + "/v2/me", headers=h)
-        if st != 200:
-            raise LinkedInError("Cannot resolve member identity "
-                                "(HTTP %s): %s" % (st, txt[:200]))
-        uid = (json.loads(txt) or {}).get("id")
-        if not uid:
-            raise LinkedInError("Member id missing in /v2/me response")
-        return "urn:li:person:" + uid
+        last = "no response"
+        for path, key in (("/v2/userinfo", "sub"), ("/v2/me", "id")):
+            try:
+                st, txt, _ = _http(LI_API + path, headers=h)
+            except LinkedInError as exc:
+                last = str(exc)[:200]
+                continue
+            if st == 200:
+                sub = (json.loads(txt) or {}).get(key)
+                if sub:
+                    return "urn:li:person:" + sub
+            last = "HTTP %s from %s: %s" % (st, path, txt[:160])
+        raise LinkedInError(
+            "Cannot resolve member identity (%s). If the error says "
+            "403: add the “Sign In with LinkedIn using OpenID "
+            "Connect” product to your LinkedIn app (Products tab — "
+            "instant approval)." % last)
 
     def org_info(self, org_id=None):
         oid = str(org_id or self.org_id).strip()
@@ -439,14 +459,15 @@ class LinkedInClient:
 
     # -- OAuth (PKCE, localhost callback) --------------------------------
     @staticmethod
-    def oauth_url(client_id, verifier, state, port=8529):
+    def oauth_url(client_id, verifier, state, port=8529, scopes=None):
         redirect = REDIRECT.replace("8529", str(port))
         digest = hashlib.sha256(verifier.encode()).digest()
         challenge = base64.urlsafe_b64encode(digest).decode().rstrip("=")
         q = urllib.parse.urlencode({
             "response_type": "code", "client_id": client_id,
             "redirect_uri": redirect, "state": state,
-            "scope": OAUTH_SCOPES, "code_challenge": challenge,
+            "scope": scopes or OAUTH_SCOPES,
+            "code_challenge": challenge,
             "code_challenge_method": "S256"})
         return LI_AUTH + "?" + q
 
@@ -693,6 +714,33 @@ def oauth_wait_code(port=8529, timeout=180, expected_state=""):
     if not result["code"] and not result["error"]:
         result["error"] = "timed out waiting for the browser redirect"
     return result["code"], result["error"]
+
+
+def _is_scope_err(err):
+    """True when LinkedIn rejected the requested scopes (product
+    missing on the user's developer app)."""
+    e = (err or "").lower()
+    return "scope" in e or "not authorized" in e or "invalid_scope" in e
+
+
+SCOPE_HELP = (
+    "Your LinkedIn developer app is missing a PRODUCT.\n\n"
+    "To post to your Company/Page add:\n"
+    "  “Community Management API” — Products tab → Request access\n"
+    "  (LinkedIn reviews it, usually 1–5 days; Page posting works "
+    "only after approval)\n\n"
+    "Instant products you can add right now:\n"
+    "  • Sign In with LinkedIn using OpenID Connect — fixes "
+    "Connect/Test\n"
+    "  • Share on LinkedIn\n\n"
+    "Go to: developer.linkedin.com/dashboard → your app → Products.")
+
+
+def _scope_nag(parent, err):
+    messagebox.showwarning(
+        "Connect — missing LinkedIn product",
+        "LinkedIn said:\n“%s”\n\n%s" % ((err or "")[:300], SCOPE_HELP),
+        parent=parent)
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -1249,15 +1297,37 @@ class App:
                     "first (from your LinkedIn developer app).",
                     parent=win)
                 return
-            verifier = secrets.token_urlsafe(48)
-            state = secrets.token_urlsafe(16)
-            url = LinkedInClient.oauth_url(cid, verifier, state)
+
+            def attempt(scopes):
+                verifier = secrets.token_urlsafe(48)
+                state = secrets.token_urlsafe(16)
+                url = LinkedInClient.oauth_url(cid, verifier, state,
+                                               scopes=scopes)
+                webbrowser.open(url)
+                code, err = oauth_wait_code(expected_state=state)
+                return code, err, verifier
+
             self.log("opening browser for LinkedIn sign-in …", PERI)
-            webbrowser.open(url)
-            code, err = oauth_wait_code(expected_state=state)
+            code, err, verifier = attempt(OAUTH_SCOPES)
+            if (err or not code) and _is_scope_err(err):
+                # LinkedIn app lacks the org scopes (Community
+                # Management API product) → retry with basic sign-in
+                # scopes so the token still connects; Page posting
+                # stays locked until LinkedIn approves the product.
+                self.log("LinkedIn app is missing the org scopes — "
+                         "retrying with basic sign-in scopes …", WARN)
+                code, err, verifier = attempt(BASIC_SCOPES)
+                if code and not err:
+                    self.log("connected WITHOUT org scopes — Page "
+                             "posting stays locked until “Community "
+                             "Management API” is approved on your "
+                             "LinkedIn app", WARN)
             if err or not code:
-                messagebox.showerror("Connect", err or "no code",
-                                     parent=win)
+                if _is_scope_err(err):
+                    _scope_nag(win, err)
+                else:
+                    messagebox.showerror("Connect", err or "no code",
+                                         parent=win)
                 return
             try:
                 tok = LinkedInClient.exchange_code(cid, sec, code,
@@ -1307,19 +1377,38 @@ class App:
 
         def test():
             self._save_settings(entries, dry)
+            c = self.client()
+            me = org = None
+            errs = []
             try:
-                me = self.client().member_urn()
-                org = self.client().org_info()
+                me = c.member_urn()
+            except Exception as exc:
+                errs.append("member: %s" % exc)
+            try:
+                org = c.org_info()
+            except Exception as exc:
+                errs.append("org: %s" % exc)
+            joined = " ".join(errs)
+            if me and org:
                 self.log("connection OK — %s posts as %s (%s)"
-                         % (me, org["name"] or org["id"], org["urn"]), OK)
+                         % (me, org["name"] or org["id"], org["urn"]),
+                         OK)
                 messagebox.showinfo(
                     "Test connection",
                     "Member: %s\nOrganization: %s (id %s)\n\nReady to "
                     "post." % (me, org["name"] or "(name hidden)",
                                org["id"]), parent=win)
-            except Exception as exc:
-                messagebox.showerror("Test connection", str(exc),
-                                     parent=win)
+            elif me or org:
+                self.log("connection PARTIAL — %s" % joined, WARN)
+                extra = "\n\n%s" % SCOPE_HELP \
+                    if (_is_scope_err(joined) or "403" in joined) else ""
+                messagebox.showwarning(
+                    "Test connection",
+                    "Token works, but:\n\n%s%s"
+                    % ("\n".join(errs), extra), parent=win)
+            else:
+                messagebox.showerror("Test connection",
+                                     "\n\n".join(errs), parent=win)
 
         self._btn(btns, "Connect LinkedIn…", connect).pack(side="left")
         self._btn(btns, "Find Org ID (vanity)…", find_org).pack(
@@ -1340,8 +1429,10 @@ class App:
         steps = (
             "1.  linkedin.com/developers → Create app (you are the 3S "
             "Verse page admin) → verify the app via the page.\n"
-            "2.  Products tab → request “Sign In with LinkedIn using "
-            "OpenID Connect” + “Share on LinkedIn”.\n"
+            "2.  Products tab → add “Sign In with LinkedIn using OpenID "
+            "Connect” + “Share on LinkedIn” (instant). To post to your "
+            "PAGE also request “Community Management API” (LinkedIn "
+            "approval ~1–5 days).\n"
             "3.  Auth tab → Client ID + Client Secret → Redirect URLs: "
             "add  http://localhost:8529/callback\n"
             "4.  Organization ID: open your page → linkedin.com/company/"
