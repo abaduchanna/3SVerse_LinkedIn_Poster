@@ -43,7 +43,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 import tkinter.font as tkfont
 
-VERSION = "1.0.5"
+VERSION = "1.0.6"
 
 # ── Brand tokens: the 3sverse.com dark-hero palette (same as License
 # Studio — canvas hsl(250 28% 3%) · card hsl(250 20% 6%) · warm-white
@@ -243,10 +243,11 @@ LI_AUTH = "https://www.linkedin.com/oauth/v2/authorization"
 LI_TOKEN = "https://www.linkedin.com/oauth/v2/accessToken"
 LI_API = "https://api.linkedin.com"
 REDIRECT = "http://localhost:8529/callback"
-OAUTH_SCOPES = "openid profile r_organization_social w_organization_social"
-BASIC_SCOPES = "openid profile"          # fallback when the LinkedIn app
-                                         # lacks the Community Management
-                                         # API product (org scopes)
+OAUTH_SCOPES = ("openid profile r_organization_social "
+                "w_organization_social w_member_social")
+MEMBER_SCOPES = "openid profile w_member_social"   # "Share on LinkedIn"
+                                                   # apps — personal posts
+BASIC_SCOPES = "openid profile"          # OIDC only — connect-only
 UA = "3SVerse-LinkedInPoster/%s (seller tool)" % VERSION
 
 
@@ -504,9 +505,20 @@ class LinkedInClient:
             return st, txt, pid or ""
         return st, txt, None
 
-    def post_image(self, image_path, text):
-        """Full pipeline: register → upload → publish. Returns post urn."""
+    def post_image(self, image_path, text, as_person=False):
+        """Full pipeline: register → upload → publish. Returns post urn.
+        as_person=True publishes from the member's own profile
+        (w_member_social — “Share on LinkedIn” product, instant) instead
+        of the organization page (w_organization_social — CM API)."""
         person = self.member_urn()
+        if as_person:
+            upload_url, asset = self.register_asset(person, person)
+            self._log("uploading image … %d KB"
+                      % (os.path.getsize(image_path) // 1024), DIM)
+            self.upload_image(upload_url, image_path)
+            return self.create_org_post(text, asset_urn=asset,
+                                        org_urn=person,
+                                        person_urn=person)
         org_urn = "urn:li:organization:" + self.org_id
         upload_url, asset = self.register_asset(org_urn, person)
         self._log("uploading image … %d KB"
@@ -573,6 +585,7 @@ class Store:
             "client_id": "", "client_secret": "", "org_id": "",
             "access_token": "", "token_expires_at": 0,
             "dry_run": False, "last_folder": "", "post_time": "09:00",
+            "post_mode": "page", "scopes_granted": "",
         })
         self.schedule = self._load(self.sch_path, {"posts": {}})
 
@@ -692,7 +705,10 @@ class Scheduler(threading.Thread):
                 time.sleep(1.2)  # simulate API latency
                 urn = "dry-run-post-urn"
             else:
-                urn = client.post_image(post["image"], post["text"])
+                urn = client.post_image(
+                    post["image"], post["text"],
+                    as_person=self.app.store.cfg.get(
+                        "post_mode", "page") == "person")
             self.app.store.set_entry(
                 folder, day, status="posted",
                 posted_at=datetime.now().isoformat(timespec="seconds"),
@@ -804,6 +820,9 @@ SCOPE_HELP = (
     "on LinkedIn's sandbox pages — Org ID 2414183 (DevTestCo) or "
     "6177438 (Test University) — posts land on LinkedIn's test "
     "pages, not on your page.\n\n"
+    "No registered business yet? Switch Settings → Post to: “Personal "
+    "profile” — it only needs “Share on LinkedIn” (instant) and posts "
+    "from your own profile.\n\n"
     "Go to: developer.linkedin.com/dashboard → your apps → Products.")
 
 
@@ -1102,11 +1121,13 @@ class App:
         posted = sum(1 for p in self.posts if self.store.entry(
             self.folder, p["day"]).get("status") == "posted")
         tok = "token OK" if self.token_valid() else "not connected"
+        mode = self.store.cfg.get("post_mode", "page")
         self.status_lbl.config(text="folder: %s   ·   %d posts   ·   "
                                "%d scheduled   ·   %d posted   ·   "
-                               "LinkedIn: %s%s" % (
+                               "LinkedIn: %s%s%s" % (
                 self.folder or "—", n, sched, posted, tok,
-                "   ·   DRY RUN" if self.store.cfg.get("dry_run") else ""))
+                "   ·   DRY RUN" if self.store.cfg.get("dry_run") else "",
+                "   ·   PERSONAL PROFILE" if mode == "person" else ""))
 
     def refresh_row(self, key, status=None):
         """Thread-safe: marshals the UI update onto the main loop."""
@@ -1163,12 +1184,18 @@ class App:
         if self.busy:
             messagebox.showinfo("Busy", "Another action is running.")
             return False
-        if not self.token_valid() or not self.store.cfg.get("org_id"):
+        if not self.token_valid() or (
+                self.store.cfg.get("post_mode", "page") == "page"
+                and not self.store.cfg.get("org_id")):
+            miss = "" if self.token_valid() else "token — "
+            miss += "Organization ID" if self.store.cfg.get(
+                "post_mode", "page") == "page" \
+                and not self.store.cfg.get("org_id") else ""
             if not messagebox.askyesno(
                     "Connect LinkedIn",
-                    "LinkedIn is not connected yet (Settings → Client "
-                    "ID / Secret / Organization ID → Connect).\n\nOpen "
-                    "Settings now?"):
+                    "LinkedIn is not ready yet (missing %s).\n\nOpen "
+                    "Settings now?" % ("connect/token" if not miss
+                                       else miss)):
                 return False
             self.settings_dialog()
             return False
@@ -1348,6 +1375,24 @@ class App:
                        activebackground=BG, selectcolor=FIELD,
                        font=(FONT, 9), bd=0, highlightthickness=0,
                        cursor="hand2").pack(anchor="w", pady=(10, 2))
+        mode = tk.StringVar(
+            value=c.get("post_mode") if c.get("post_mode") in
+            ("page", "person") else "page")
+        tk.Label(box, text="Post to:", bg=BG, fg=DIM,
+                 font=(FONT, 9)).pack(anchor="w", pady=(8, 0))
+        tk.Radiobutton(box, text="Company Page — needs “Community "
+                       "Management API” (form requires a REGISTERED "
+                       "business)", variable=mode, value="page",
+                       bg=BG, fg=TEXT, activebackground=BG,
+                       selectcolor=FIELD, font=(FONT, 9), bd=0,
+                       highlightthickness=0, cursor="hand2").pack(
+            anchor="w")
+        tk.Radiobutton(box, text="Personal profile — needs “Share on "
+                       "LinkedIn” only (instant)", variable=mode,
+                       value="person", bg=BG, fg=TEXT,
+                       activebackground=BG, selectcolor=FIELD,
+                       font=(FONT, 9), bd=0, highlightthickness=0,
+                       cursor="hand2").pack(anchor="w")
         tok_state = ("connected, expires %s" %
                      datetime.fromtimestamp(float(
                          c.get("token_expires_at", 0))).strftime(
@@ -1380,19 +1425,31 @@ class App:
 
             self.log("opening browser for LinkedIn sign-in …", PERI)
             code, err, verifier = attempt(OAUTH_SCOPES)
+            granted = OAUTH_SCOPES
             if (err or not code) and _is_scope_err(err):
-                # LinkedIn app lacks the org scopes (Community
-                # Management API product) → retry with basic sign-in
-                # scopes so the token still connects; Page posting
-                # stays locked until LinkedIn approves the product.
-                self.log("LinkedIn app is missing the org scopes — "
-                         "retrying with basic sign-in scopes …", WARN)
+                # org scopes rejected → try personal-posting scopes
+                # ("Share on LinkedIn" product) before going basic.
+                self.log("org scopes rejected — retrying with "
+                         "personal-posting scopes …", WARN)
+                code, err, verifier = attempt(MEMBER_SCOPES)
+                granted = MEMBER_SCOPES
+            if (err or not code) and _is_scope_err(err):
+                self.log("member scope rejected too — retrying with "
+                         "basic sign-in scopes …", WARN)
                 code, err, verifier = attempt(BASIC_SCOPES)
-                if code and not err:
-                    self.log("connected WITHOUT org scopes — Page "
-                             "posting stays locked until “Community "
-                             "Management API” is approved on your "
-                             "LinkedIn app", WARN)
+                granted = BASIC_SCOPES
+            if code and not err and granted != OAUTH_SCOPES:
+                if granted == MEMBER_SCOPES:
+                    self.log("connected — personal-profile posting OK; "
+                             "Page posting locked until “Community "
+                             "Management API” is approved (Settings → "
+                             "Post to: Personal profile)", WARN)
+                else:
+                    self.log("connected WITHOUT posting scopes — add "
+                             "“Share on LinkedIn” (personal posts) or "
+                             "“Community Management API” (page posts) "
+                             "on your LinkedIn app, then connect again",
+                             WARN)
             if err or not code:
                 if _is_scope_err(err):
                     _scope_nag(win, err)
@@ -1411,6 +1468,7 @@ class App:
             c["access_token"] = tok["access_token"]
             c["token_expires_at"] = tok["expires_at"]
             c["client_id"], c["client_secret"] = cid, sec
+            c["scopes_granted"] = granted
             self.store.save_cfg()
             self.tok_lbl.config(text="token: connected, expires %s" %
                                 datetime.fromtimestamp(
@@ -1447,28 +1505,40 @@ class App:
                                 parent=win)
 
         def test():
-            self._save_settings(entries, dry)
+            self._save_settings(entries, dry, mode)
             c = self.client()
+            person_mode = mode.get() == "person"
             me = org = None
             errs = []
             try:
                 me = c.member_urn()
             except Exception as exc:
                 errs.append("member: %s" % exc)
-            try:
-                org = c.org_info()
-            except Exception as exc:
-                errs.append("org: %s" % exc)
+            if not person_mode:
+                try:
+                    org = c.org_info()
+                except Exception as exc:
+                    errs.append("org: %s" % exc)
             joined = " ".join(errs)
-            if me and org:
-                self.log("connection OK — %s posts as %s (%s)"
-                         % (me, org["name"] or org["id"], org["urn"]),
-                         OK)
-                messagebox.showinfo(
-                    "Test connection",
-                    "Member: %s\nOrganization: %s (id %s)\n\nReady to "
-                    "post." % (me, org["name"] or "(name hidden)",
-                               org["id"]), parent=win)
+            if me and (person_mode or org):
+                if person_mode:
+                    self.log("connection OK — personal-profile posting "
+                             "ready (%s)" % me, OK)
+                    messagebox.showinfo(
+                        "Test connection",
+                        "Member: %s\n\nPersonal-profile posting ready. "
+                        "If actual posts fail with 403, add “Share on "
+                        "LinkedIn” to your LinkedIn app (Products tab, "
+                        "instant) and connect again." % me, parent=win)
+                else:
+                    self.log("connection OK — %s posts as %s (%s)"
+                             % (me, org["name"] or org["id"],
+                                org["urn"]), OK)
+                    messagebox.showinfo(
+                        "Test connection",
+                        "Member: %s\nOrganization: %s (id %s)\n\nReady "
+                        "to post." % (me, org["name"] or "(name hidden)",
+                                      org["id"]), parent=win)
             elif me or org:
                 self.log("connection PARTIAL — %s" % joined, WARN)
                 extra = "\n\n%s" % SCOPE_HELP \
@@ -1487,7 +1557,7 @@ class App:
         self._btn(btns, "Test connection", test).pack(side="left",
                                                       padx=(8, 0))
         self._btn(btns, "Save", lambda: (self._save_settings(entries,
-                                                            dry),
+                                                            dry, mode),
                                          win.destroy()),
                   fill=True).pack(side="right")
 
@@ -1501,28 +1571,32 @@ class App:
             "1.  linkedin.com/developers → Create app (you are the 3S "
             "Verse page admin) → verify the app via the page.\n"
             "2.  Products tab → add “Sign In with LinkedIn using OpenID "
-            "Connect” + “Share on LinkedIn” (instant). For PAGE "
-            "posting: LinkedIn only accepts “Community Management API” "
-            "on a NEW app with no other products — create one (same "
-            "page) and request it there (approval ~1–5 days).\n"
+            "Connect” + “Share on LinkedIn” (both instant — the second "
+            "enables Personal-profile posting). For PAGE posting: "
+            "LinkedIn only accepts “Community Management API” on a NEW "
+            "app with no other products, and its access form needs a "
+            "REGISTERED business name (approval ~1–5 days).\n"
             "3.  Auth tab → Client ID + Client Secret → Redirect URLs: "
             "add  http://localhost:8529/callback\n"
-            "4.  Organization ID: open your page → linkedin.com/company/"
-            "3sverse → Ctrl+U (view source) → search “urn:li:organization:"
-            "” → the number after it is the Organization ID. (Or connect "
-            "first and use “Find Org ID (vanity)” above.) While approval "
-            "is pending, Org ID 2414183 (DevTestCo) works for testing.\n"
+            "4.  Page mode only — Organization ID: open your page → "
+            "linkedin.com/company/3sverse → Ctrl+U (view source) → "
+            "search “urn:li:organization:” → the number after it is the "
+            "Organization ID. (Or connect first and use “Find Org ID "
+            "(vanity)” above.) While approval is pending, Org ID "
+            "2414183 (DevTestCo) works for testing.\n"
             "5.  Paste everything here → Connect → Test → Save.")
         tk.Label(helpbox, text=steps, bg=PANEL, fg=DIM,
                  font=(MONO, 8), justify="left", wraplength=560).pack(
             anchor="w", padx=10, pady=(0, 10))
 
-    def _save_settings(self, entries, dry_var):
+    def _save_settings(self, entries, dry_var, mode_var=None):
         c = self.store.cfg
         c["client_id"] = entries["Client ID"].get().strip()
         c["client_secret"] = entries["Client Secret"].get().strip()
         c["org_id"] = entries["Organization ID (numeric)"].get().strip()
         c["dry_run"] = bool(dry_var.get())
+        if mode_var is not None:
+            c["post_mode"] = mode_var.get()
         self.store.save_cfg()
         self.log("settings saved%s" % (" (dry run)" if c["dry_run"]
                                        else ""), DIM)

@@ -40,6 +40,11 @@ On the app's **Products** tab:
 
 > The Poster requests the full scope set when connecting. If your app doesn't have the org products yet, it automatically retries with the basic sign-in scopes so Connect still succeeds — Page posting unlocks the moment LinkedIn approves **Community Management API** (just connect again afterwards).
 
+### Step 3b — Choose where posts land (Settings → "Post to")
+
+- **Company Page** — needs the *Community Management API* product. Its access form asks for a **registered business name**; LinkedIn verifies the active business registration, so an unregistered name gets rejected. Register first (a DBA / assumed-name filing is usually the fastest, cheapest option), then apply.
+- **Personal profile** — needs only *Share on LinkedIn* (instant). Posts go from your own profile to your network. Great for selling while the Page product is pending. Status bar shows **PERSONAL PROFILE** when active; Organization ID is not needed in this mode.
+
 ### Step 3 — Auth credentials + redirect
 
 On the **Auth** tab:
@@ -97,6 +102,8 @@ Posts go through LinkedIn's **official REST API** with your own developer-app to
 
 **Community Management API request is grayed out / closed** — expected when the app already has other products (LinkedIn only allows the request on a brand-new app with no other products). Create a new app (same company page) → verify → request it there → use the new credentials in the Poster. Meanwhile you can test Page posting end-to-end on LinkedIn's sandbox pages: Org ID **2414183** (DevTestCo) or **6177438** (Test University) — posts land on LinkedIn's test pages, not yours.
 
+**Posts fail with 403 in Personal profile mode** — the token is missing `w_member_social`: add **Share on LinkedIn** to your app (instant) and connect again.
+
 **“Posts API failed …”** — the Poster publishes through the versioned **Posts API** (`/rest/posts`, header `LinkedIn-Version: 202607`) and automatically falls back to the legacy `ugcPosts` endpoint if your app hasn't been migrated yet; the error text shows both attempts.
 
 **“GET https://api.linkedin.com/v2/userinfo failed: Remote end closed connection without response”** (on Test connection) — a network-level drop (AV/proxy/VPN or a transient LinkedIn hiccup). The Poster now retries 3× automatically. If it persists: allow `3SVerse_LinkedIn_Poster.exe` in your AV, disable VPN/proxy for the test, then run **Test connection** again.
@@ -116,4 +123,4 @@ python -m nuitka --onefile --enable-plugin=tk-inter \
 
 > **Antivirus / SentinelOne note (v1.0.2+):** the exe unpacks its runtime (python + tk DLLs) **once** into a stable folder — `%LOCALAPPDATA%\3SVerse LinkedIn Poster\<version>` — and reuses it on every launch (no random temp folders, no repeated DLL drops). If your AV (SentinelOne, Defender, etc.) asks on first run, choose **Allow / Trust**; afterwards nothing is re-extracted and the trigger loop stops. SentinelOne console admins can add a one-line exclusion for `3SVerse_LinkedIn_Poster.exe` if policy requires. The exe is built from this repo's own source via GitHub Actions — nothing external.
 
-Developed by www.3SVerse.com — v1.0.5
+Developed by www.3SVerse.com — v1.0.6
