@@ -43,7 +43,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 import tkinter.font as tkfont
 
-VERSION = "1.0.6"
+VERSION = "1.0.7"
 
 # ── Brand tokens: the 3sverse.com dark-hero palette (same as License
 # Studio — canvas hsl(250 28% 3%) · card hsl(250 20% 6%) · warm-white
@@ -863,15 +863,10 @@ class App:
         except Exception:
             pass
 
-        # Brand background (the website hero ring + footer orb),
-        # drawn on a canvas that sits BEHIND every widget — same
-        # artwork and composition as License Studio.
-        self._bg_canvas = tk.Canvas(root, bg=BG, highlightthickness=0,
-                                    bd=0)
-        self._bg_canvas.place(x=0, y=0, relwidth=1, relheight=1)
-        self._bg_canvas.bind("<Configure>", lambda _e: self._draw_bg())
-        self._bg_imgs = []
-        self._load_bg_assets()
+        # Shared website/WiFi Transfer background. This uses the exact
+        # 120s ring spin, 140s orb spin and 12px/13s float timings.
+        from branding_runtime import install_branding
+        install_branding(root, dark=True, background=BG)
 
         self._build_header()
         self._build_body()

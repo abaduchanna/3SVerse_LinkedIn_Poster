@@ -11,7 +11,7 @@ name: Build LinkedIn Poster
 on:
   push:
     branches: [main]
-    paths: ["linkedin_poster.py", ".github/workflows/build-poster.yml"]
+    paths: ["linkedin_poster.py", "branding_runtime.py", "brand_bg_*.png", "3sverse_icon.ico", ".github/workflows/build-poster.yml"]
   workflow_dispatch:
 
 permissions:
@@ -58,6 +58,8 @@ jobs:
           --include-data-file=3sverse_logo_header.png=3sverse_logo_header.png
           --include-data-file=bg_ring.png=bg_ring.png
           --include-data-file=bg_orb.png=bg_orb.png
+          --include-data-file=brand_bg_ring.png=brand_bg_ring.png
+          --include-data-file=brand_bg_orb.png=brand_bg_orb.png
           --output-dir=dist linkedin_poster.py
 
       - name: Rename exe
