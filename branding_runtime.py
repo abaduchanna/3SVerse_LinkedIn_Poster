@@ -122,6 +122,8 @@ class BrandAnimation:
                     ("brand_bg_ring.png", 600, self._ring_frames),
                     ("brand_bg_orb.png", 460, self._orb_frames)):
                 image = Image.open(_asset_path(filename)).convert("RGBA")
+                image.putalpha(image.getchannel("A").point(
+                    lambda value: min(255, int(value * 1.55))))
                 if max(image.size) > maximum:
                     scale = maximum / float(max(image.size))
                     image = image.resize(
@@ -152,15 +154,15 @@ class BrandAnimation:
             height = max(2, int(canvas.winfo_height()))
             if self._ring_frames:
                 ring = self._ring_frames[self._ring_index % len(self._ring_frames)]
-                self._ring_x = width + ring.width() * 0.16
+                self._ring_x = width + ring.width() * 0.05
                 self._ring_y = height * 0.44
                 self._ring_item = canvas.create_image(
                     self._ring_x, self._ring_y,
                     image=ring, anchor="center", tags=("brand_art",))
             if self._orb_frames:
                 orb = self._orb_frames[self._orb_index % len(self._orb_frames)]
-                self._orb_x = -orb.width() * 0.22
-                self._orb_y = height - orb.height() * 0.42
+                self._orb_x = -orb.width() * 0.10
+                self._orb_y = height - orb.height() * 0.32
                 self._orb_item = canvas.create_image(
                     self._orb_x, self._orb_y, image=orb, anchor="center",
                     tags=("brand_art",))
