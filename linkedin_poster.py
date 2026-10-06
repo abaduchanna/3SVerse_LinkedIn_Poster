@@ -922,7 +922,14 @@ class App:
         logo = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             "3sverse_logo_header.png")
         if os.path.exists(logo):
-            self._hdr_logo = tk.PhotoImage(file=logo)
+            ph = tk.PhotoImage(file=logo)
+            try:
+                # standardized new-logo wordmark (654x155) shown at 1/3
+                # scale (~218x51) so the header row keeps its proportions
+                ph = ph.subsample(3, 3)
+            except Exception:
+                pass
+            self._hdr_logo = ph
             tk.Label(row, image=self._hdr_logo, bg=BG, bd=0
                      ).pack(side="left")
             logo_w = self._hdr_logo.width()
