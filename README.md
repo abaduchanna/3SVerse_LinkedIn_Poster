@@ -1,8 +1,10 @@
 # 3SVerse LinkedIn Poster
 
+
+> **Delivery format (owner roadmap, 2026-10-07):** the LinkedIn Poster ships as a **Windows EXE** (Nuitka onefile via CI) and the same standard will carry it to an **Android APK** — same 3SVerse brand standard (new logo, fonts, colors, centered header, standard footer).
 **Developed by www.3SVerse.com (c) 2026** · Independent vendor — not affiliated with LinkedIn or VidaPay.
 
-Seller tool that publishes a **campaign folder** (day-by-day images + post text) to the **3S Verse LinkedIn company page** via the official LinkedIn API — with **Post Now** for immediate publishing and **Select All → Schedule** for a hands-off, one-post-per-day cadence.
+Seller tool that publishes a **campaign folder** (day-by-day images + post text) to the **3SVerse LinkedIn company page** via the official LinkedIn API — with **Post Now** for immediate publishing and **Select All → Schedule** for a hands-off, one-post-per-day cadence.
 
 The repo ships with the October 2026 30-day campaign in `campaigns/2026-10/` (30 ready-to-post 1200×627 PNGs + post text).
 
@@ -25,8 +27,8 @@ You need three things from linkedin.com/developers: **Client ID**, **Client Secr
 
 ### Step 1 — Create the app
 
-1. Go to <https://www.linkedin.com/developers> and sign in with the account that is a **super admin of the 3S Verse page**.
-2. **Create app** → fill name (`3SVerse Poster`), add a logo (use `3sverse_logo_header.png`), and select the **3S Verse** company page — this is how LinkedIn knows you may post as that page.
+1. Go to <https://www.linkedin.com/developers> and sign in with the account that is a **super admin of the 3SVerse page**.
+2. **Create app** → fill name (`3SVerse Poster`), add a logo (use `3sverse_logo_header.png`), and select the **3SVerse** company page — this is how LinkedIn knows you may post as that page.
 3. Verify the app (LinkedIn emails a verification link to the page admin).
 
 ### Step 2 — Request the products
@@ -60,7 +62,7 @@ On the **Auth** tab:
 
 ### Step 4 — Find the Organization ID (step by step)
 
-The Organization ID is the **numeric id of the 3S Verse company page**. Easiest ways:
+The Organization ID is the **numeric id of the 3SVerse company page**. Easiest ways:
 
 **Method A — view source (no tools needed)**
 
