@@ -118,12 +118,14 @@ class BrandAnimation:
         try:
             from PIL import Image, ImageTk
             resampling = getattr(Image, "Resampling", Image)
-            for filename, maximum, target in (
-                    ("brand_bg_ring.png", 600, self._ring_frames),
-                    ("brand_bg_orb.png", 460, self._orb_frames)):
+            for filename, maximum, target, boost in (
+                    ("brand_bg_ring.png", 600, self._ring_frames, 4.1),
+                    ("brand_bg_orb.png", 460, self._orb_frames, 5.95)):
                 image = Image.open(_asset_path(filename)).convert("RGBA")
+                # Site-standard vibrancy: ring -> effective .9, orb -> .95
+                # (base assets are pre-dimmed; owner order: no dull art).
                 image.putalpha(image.getchannel("A").point(
-                    lambda value: min(255, int(value * 1.55))))
+                    lambda value, b=boost: min(255, int(value * b))))
                 if max(image.size) > maximum:
                     scale = maximum / float(max(image.size))
                     image = image.resize(
