@@ -39,7 +39,7 @@ jobs:
           echo "building LinkedIn Poster $v"
 
       - name: Install build deps
-        run: python -m pip install nuitka
+        run: python -m pip install nuitka selenium
 
       - name: Build with Nuitka (onefile - single portable exe)
         shell: cmd
