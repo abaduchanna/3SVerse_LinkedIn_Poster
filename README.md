@@ -16,6 +16,7 @@ The repo ships with the October 2026 30-day campaign in `campaigns/2026-10/` (30
 2. **Tick posts** (or **Select All**).
 3. **Post Now** — publishes the ticked posts to the company page immediately (image upload + text via `ugcPosts`).
 4. **Schedule…** — assigns the ticked posts to consecutive days at a fixed local time (default **09:00** — the campaign's recommended posting time). While the app is running it publishes each slot automatically (checks every 15 s). If the app was closed at post time, the slot is flagged **MISSED** — nothing posts twice, nothing silently disappears; tick it and hit **Post Now**.
+5. **Browser Mode…** — the same campaign scheduled through **your own logged-in Chrome** — no developer app, no API token, no approval wait. This is a Python/Selenium port of the 3SVerse LinkedIn Campaign Uploader extension (full source: [`chrome-extension/`](chrome-extension/)): the app opens a Chrome window, you sign in once (as a page admin), and each post is driven through LinkedIn's own composer — **Create → Start a post → Add media → Next → Schedule post → Date/Time → Next → caption + hashtags (verified) → final Schedule**. Scheduling is committed *before* the caption is typed, so LinkedIn can never drop it. Per-post state is saved (`completed`/`failed`/`skipped`); a re-run resumes where it stopped. Once LinkedIn confirms a slot, the post publishes even if the app is closed. Settings remembers the company-page dashboard URL.
 
 Settings (stored in `%APPDATA%\3SVerse\LinkedInPoster\config.json`): Client ID / Secret, Organization ID, token (60-day), **Dry run** mode to rehearse the whole flow with zero API calls.
 
@@ -96,7 +97,7 @@ Open the Poster → **Settings** → paste Client ID / Secret / Organization ID 
 
 ## Compliancy
 
-Posts go through LinkedIn's **official REST API** with your own developer-app token — this is the sanctioned posting path (no scraping, no fake browser automation). Content of the campaign pack is for 3SVerse marketing.
+API mode goes through LinkedIn's **official REST API** with your own developer-app token — the sanctioned posting path (no scraping). **Browser Mode** drives LinkedIn's own composer UI through your own logged-in session — the same actions you would perform by hand, automated (type-and-click through the real controls; nothing injected into feeds, nothing posted without LinkedIn's own confirmations). Content of the campaign pack is for 3SVerse marketing.
 
 ## Troubleshooting
 
@@ -129,4 +130,4 @@ python -m nuitka --onefile --enable-plugin=tk-inter \
 
 Released under the **MIT License** — see [LICENSE](LICENSE). You are free to use, modify and redistribute this tool. It is posted through LinkedIn's official developer API only; you are responsible for complying with LinkedIn's terms and your local rules when using it.
 
-Developed by www.3SVerse.com — v1.0.6
+Developed by www.3SVerse.com — v1.1.0

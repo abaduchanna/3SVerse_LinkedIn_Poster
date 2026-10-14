@@ -11,7 +11,7 @@ name: Build LinkedIn Poster
 on:
   push:
     branches: [main]
-    paths: ["linkedin_poster.py", "branding_runtime.py", "brand_bg_*.png", "3sverse_icon.ico", ".github/workflows/build-poster.yml"]
+    paths: ["linkedin_poster.py", "web_workflow.py", "branding_runtime.py", "brand_bg_*.png", "3sverse_icon.ico", "chrome-extension/**", ".github/workflows/build-poster.yml"]
   workflow_dispatch:
 
 permissions:
@@ -54,12 +54,14 @@ jobs:
           --file-description="3SVerse LinkedIn Poster (campaign scheduler + publisher)"
           --onefile-tempdir-spec="%CACHE_DIR%/{PRODUCT}/{VERSION}"
           --python-flag=no_asserts,no_docstrings
+          --include-package=selenium
           --include-data-file=3sverse_icon.ico=3sverse_icon.ico
           --include-data-file=3sverse_logo_header.png=3sverse_logo_header.png
           --include-data-file=bg_ring.png=bg_ring.png
           --include-data-file=bg_orb.png=bg_orb.png
           --include-data-file=brand_bg_ring.png=brand_bg_ring.png
           --include-data-file=brand_bg_orb.png=brand_bg_orb.png
+          --include-data-dir=chrome-extension=chrome-extension
           --output-dir=dist linkedin_poster.py
 
       - name: Rename exe

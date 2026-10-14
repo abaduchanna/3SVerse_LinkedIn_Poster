@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>3SVerse LinkedIn Campaign Uploader</title>
+  <link rel="stylesheet" href="app.css">
+  <link rel="stylesheet" href="status.css">
+</head>
+<body>
+  <header>
+    <div class="linkedinMark" aria-label="LinkedIn">in</div>
+    <div><h1>LinkedIn Campaign Uploader</h1><p>3S Verse company page · Images · Videos · Complete captions + hashtags</p></div>
+  </header>
+  <main>
+    <section class="card">
+      <h2>1. Link campaign folders</h2>
+      <label>Campaign folder 1<input id="folder1" type="file" webkitdirectory multiple></label>
+      <p id="folder1Summary" class="hint">Choose the folder containing the campaign Markdown, images, videos—or all of them.</p>
+      <label>Campaign folder 2 <span class="hint">(optional)</span><input id="folder2" type="file" webkitdirectory multiple></label>
+      <p id="folder2Summary" class="hint">Use this only when media is in a second folder.</p>
+      <details>
+        <summary>Windows folder paths</summary>
+        <label>Folder 1 path<input id="path1" type="text" value="C:\Users\AbadUmairChanna\Downloads\3SVerse_LinkedIn_Campaign_Oct_2026" spellcheck="false"></label>
+        <label>Folder 2 path<input id="path2" type="text" value="C:\Users\AbadUmairChanna\Downloads\3SVerse_30_Day_Social_Campaign_Bundle" spellcheck="false"></label>
+        <p class="hint">These paths let Chrome attach the selected local files to LinkedIn's native uploader.</p>
+      </details>
+    </section>
+
+    <section class="card grid">
+      <div>
+        <h2>2. Daily schedule</h2>
+        <label>Start from campaign day<input id="startDay" type="number" min="1" max="999" value="1"></label>
+        <label>Start date<input id="startDate" type="date"></label>
+        <label>Daily time<input id="time" type="time" value="09:00"></label>
+        <p class="hint">Each next campaign day is scheduled for the next calendar day.</p>
+      </div>
+      <div>
+        <h2>3. Media type</h2>
+        <label class="check"><input id="imageType" name="mediaType" type="radio" checked> Use daily campaign images</label>
+        <label class="check"><input id="videoType" name="mediaType" type="radio"> Use daily campaign videos</label>
+        <p class="hint">Only one media post is scheduled per campaign day.</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="row"><h2>Daily scheduled posts</h2><strong id="queueCount">0 posts ready</strong></div>
+      <div id="queue" class="queue"><p class="hint">Select one or two folders to preview the daily schedule.</p></div>
+    </section>
+
+    <section class="card actions">
+      <button id="openLinkedIn" class="secondary">Open LinkedIn Page</button>
+      <button id="start">Schedule all daily posts</button>
+      <button id="stop" class="danger" disabled>Stop after current post</button>
+      <p id="status" role="status">Ready.</p>
+    </section>
+  </main>
+  <footer>v1.2.0 · 3SVerse · Persistent daily progress</footer>
+  <script src="lib.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -14,6 +14,14 @@ Markdown), tick what you want, then:
                    publishes each one automatically while it is running.
                    Anything missed while the app was closed is flagged
                    MISSED — nothing posts twice, nothing posts silently.
+  · Browser Mode… — schedule the same campaign through YOUR OWN logged-in
+                   Chrome window (no developer app, no API token). This
+                   is a Python/Selenium port of the 3SVerse LinkedIn
+                   Campaign Uploader extension workflow (full extension
+                   source ships in chrome-extension/): trusted CDP input,
+                   LinkedIn's own Schedule dialog, schedule-first-then-
+                   caption, per-item queue state. Once LinkedIn confirms
+                   a slot, the post publishes even if this app is closed.
 
 Credentials live in Settings: LinkedIn Client ID / Secret, Organization
 ID (the numeric id of the 3S Verse company page), and the OAuth connect
@@ -43,7 +51,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 import tkinter.font as tkfont
 
-VERSION = "1.0.9"
+VERSION = "1.1.0"
 
 # ── Brand tokens: the 3sverse.com dark-hero palette (same as License
 # Studio — canvas hsl(250 28% 3%) · card hsl(250 20% 6%) · warm-white
@@ -957,6 +965,8 @@ class App:
                                                      padx=(8, 0))
         self._btn(bar, "Schedule…", self.schedule_dialog).pack(
             side="left", padx=(8, 0))
+        self._btn(bar, "Browser Mode…", self.browser_mode_dialog).pack(
+            side="left", padx=(8, 0))
         self._btn(bar, "Post Now", self.post_now, fill=True).pack(
             side="right")
         self._btn(bar, "Settings", self.settings_dialog).pack(
@@ -1344,7 +1354,225 @@ class App:
         self._btn(btns, "Schedule", ok, fill=True).pack(side="right")
         self._btn(btns, "Cancel", win.destroy).pack(side="right", padx=8)
 
-    # ── settings ─────────────────────────────────────────────────────
+    # ── browser mode (extension workflow port, no API needed) ────────
+    def web_ensure_driver(self, dash_url):
+        import web_workflow as ww
+        if getattr(self, "_web", None) is not None:
+            try:
+                _ = self._web.driver.current_url
+                self._web.dashboard_url = dash_url
+                return self._web
+            except Exception:
+                try:
+                    self._web.close()
+                except Exception:
+                    pass
+                self._web = None
+        profile = os.path.join(store_dir(), "chrome-profile")
+        self.log("starting your Chrome (first run may take a minute)…",
+                 PERI)
+        self._web = ww.WebPoster(profile, dashboard_url=dash_url,
+                                 log=lambda m, c=None: self.log(m, c))
+        return self._web
+
+    def browser_mode_dialog(self):
+        import web_workflow as ww
+        if getattr(self, "_web_running", False):
+            if messagebox.askyesno(
+                    "Browser Mode", "A Browser Mode run is active.\n\n"
+                    "Stop after the current post?"):
+                self.web_stop.set()
+            return
+        if not self.posts:
+            messagebox.showinfo("Browser Mode",
+                                "Load a campaign folder first.")
+            return
+        keys = self.selected_keys()
+        if not keys:
+            messagebox.showinfo(
+                "Browser Mode",
+                "Tick the posts to schedule (or Select All).")
+            return
+        c = self.store.cfg
+        win = tk.Toplevel(self.root)
+        win.title("Browser Mode — %d posts" % len(keys))
+        win.configure(bg=BG)
+        win.transient(self.root)
+        win.grab_set()
+        box = tk.Frame(win, bg=BG)
+        box.pack(fill="both", expand=True, padx=22, pady=16)
+        tk.Label(box, text="Browser Mode — schedule via your own "
+                           "Chrome", bg=BG, fg=TEXT,
+                 font=(HEAD_FONT, 14)).pack(anchor="w")
+        make_grad_bar(box, height=2).pack(fill="x", pady=(8, 12))
+        grid = tk.Frame(box, bg=BG)
+        grid.pack(fill="x")
+        fields = []
+        defaults = [
+            ("Start date (YYYY-MM-DD)",
+             (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")),
+            ("Posting time (local, HH:MM)",
+             c.get("post_time", "09:00")),
+            ("Company page dashboard URL",
+             c.get("web_dashboard_url") or
+             ww.DASHBOARD_URL_DEFAULT),
+        ]
+        for i, (label, val) in enumerate(defaults):
+            tk.Label(grid, text=label, bg=BG, fg=DIM,
+                     font=(FONT, 9)).grid(row=i, column=0, sticky="w",
+                                          pady=4)
+            ent = tk.Entry(grid, bg=FIELD, fg=TEXT, bd=0,
+                           insertbackground=TEXT, font=(MONO, 10),
+                           width=44)
+            ent.insert(0, val)
+            ent.grid(row=i, column=1, sticky="w", padx=10, pady=4)
+            fields.append(ent)
+        note = tk.Label(
+            box, text="Posts are scheduled through your logged-in "
+            "LinkedIn session in a Chrome window this app opens — no "
+            "developer app or API token needed. Scheduling types "
+            "through LinkedIn's own dialog (schedule first, caption "
+            "after — the caption can never be dropped). Once LinkedIn "
+            "confirms a slot it publishes even if this app is closed.",
+            bg=BG, fg=DIM, font=(FONT, 8), wraplength=460,
+            justify="left")
+        note.pack(fill="x", pady=(10, 4))
+        warn = tk.Label(
+            box, text="First run: sign in to LinkedIn (as page admin) "
+            "in the opened Chrome window — the session is remembered. "
+            "Keep the window open (minimized is fine) while the run "
+            "is active. Each post takes ~1–2 minutes.",
+            bg=BG, fg=WARN, font=(FONT, 8), wraplength=460,
+            justify="left")
+        warn.pack(fill="x", pady=(0, 10))
+
+        def start():
+            try:
+                start_d = datetime.strptime(
+                    fields[0].get().strip(), "%Y-%m-%d")
+                hhmm = _parse_hhmm(fields[1].get())
+                dash = fields[2].get().strip() or \
+                    ww.DASHBOARD_URL_DEFAULT
+            except ValueError:
+                messagebox.showerror("Browser Mode",
+                                     "Bad start date.", parent=win)
+                return
+            if start_d.date() == datetime.now().date():
+                first = datetime.now().replace(
+                    hour=int(hhmm.split(":")[0]),
+                    minute=int(hhmm.split(":")[1]))
+                if first <= datetime.now() + timedelta(minutes=10):
+                    messagebox.showerror(
+                        "Browser Mode",
+                        "Pick a start date/time at least 10 minutes in "
+                        "the future.", parent=win)
+                    return
+            hh, mm = hhmm.split(":")
+            plan = []
+            for i, k in enumerate(sorted(
+                    keys, key=lambda k: self.post_by_key(k)["day"])):
+                p = self.post_by_key(k)
+                when = start_d + timedelta(days=i)
+                plan.append((k, p, when.replace(hour=int(hh),
+                                                minute=int(mm))))
+            self.store.cfg["web_dashboard_url"] = dash
+            self.store.cfg["post_time"] = hhmm
+            self.store.save_cfg()
+            self.web_stop = threading.Event()
+            self._web_running = True
+            win.destroy()
+            threading.Thread(
+                target=self.run_web_queue, args=(plan, dash),
+                daemon=True).start()
+
+        btns = tk.Frame(box, bg=BG)
+        btns.pack(fill="x", pady=(6, 0))
+        self._btn(btns, "Start scheduling", start,
+                  fill=True).pack(side="right")
+        self._btn(btns, "Cancel", win.destroy).pack(side="right",
+                                                   padx=8)
+
+    def run_web_queue(self, plan, dash_url):
+        import web_workflow as ww
+        self.busy = True
+        stop = self.web_stop
+        try:
+            try:
+                wp = self.web_ensure_driver(dash_url)
+            except Exception as exc:
+                self.log("Browser Mode could not start Chrome: %s" % exc,
+                         DANGER)
+                return
+            prog = ww.load_progress(store_dir())
+            done = 0
+            for k, p, when in plan:
+                if stop.is_set():
+                    break
+                e = self.store.entry(self.folder, p["day"])
+                if e.get("status") == "posted":
+                    self.log("skip (already posted via API): %s"
+                             % p["title"], WARN)
+                    continue
+                pk = "%s|%d" % (os.path.normpath(self.folder), p["day"])
+                if (prog.get(pk) or {}).get("status") == "completed":
+                    self.log("skip (already scheduled in Chrome): %s"
+                             % p["title"], WARN)
+                    continue
+                date_text = when.strftime("%Y-%m-%d")
+                hhmm = when.strftime("%H:%M")
+                self.log("Browser Mode — Day %d for %s %s …"
+                         % (p["day"], date_text, hhmm), PERI)
+                self.refresh_row(k, status="Browser: running")
+                prog[pk] = {"status": "running",
+                            "detail": p["title"],
+                            "updatedAt": datetime.now().isoformat(
+                                timespec="seconds")}
+                ww.save_progress(store_dir(), prog)
+                try:
+                    wp.post_item(p["image"], p["text"], date_text, hhmm)
+                except ww.LoginRequired as exc:
+                    self.refresh_row(k, status="Browser: sign-in needed")
+                    self.log("%s — sign in to LinkedIn in the opened "
+                             "Chrome window, then start Browser Mode "
+                             "again (done posts are skipped)." % exc,
+                             DANGER)
+                    break
+                except Exception as exc:
+                    prog[pk] = {"status": "failed",
+                                "detail": str(exc)[:300],
+                                "updatedAt": datetime.now().isoformat(
+                                    timespec="seconds")}
+                    ww.save_progress(store_dir(), prog)
+                    self.refresh_row(k, status="Browser: failed")
+                    self.log("Day %d failed: %s — fix the problem and "
+                             "start Browser Mode again; completed posts "
+                             "are skipped automatically."
+                             % (p["day"], str(exc)[:200]), DANGER)
+                    break
+                prog[pk] = {"status": "completed",
+                            "detail": "%s %s" % (date_text, hhmm),
+                            "updatedAt": datetime.now().isoformat(
+                                timespec="seconds")}
+                ww.save_progress(store_dir(), prog)
+                self.store.set_entry(self.folder, p["day"],
+                                     web_status="done",
+                                     web_when=when.isoformat(
+                                         timespec="minutes"))
+                self.refresh_row(k, status="Browser: scheduled")
+                done += 1
+                if not stop.is_set():
+                    time.sleep(3.5)
+            stopped = stop.is_set()
+            self.log("Browser Mode %s — %d/%d posts scheduled by "
+                     "LinkedIn."
+                     % ("stopped" if stopped else "complete",
+                        done, len(plan)), OK if done == len(plan)
+                     else WARN)
+        finally:
+            self.busy = False
+            self._web_running = False
+
+    # ── settings ──────────────────────────────────────────────────
     def settings_dialog(self):
         c = self.store.cfg
         win = tk.Toplevel(self.root)
@@ -1627,8 +1855,16 @@ class App:
         if messagebox.askokcancel(
                 "Exit", "Closing the app stops scheduled auto-posting "
                 "(already scheduled slots will be flagged MISSED). "
+                "Browser Mode slots already confirmed by LinkedIn are "
+                "safe — they publish even when the app is closed. "
                 "Exit?"):
             self.scheduler.stop_flag.set()
+            if getattr(self, "_web", None) is not None:
+                try:
+                    self._web.close()
+                except Exception:
+                    pass
+                self._web = None
             self.root.destroy()
 
 
