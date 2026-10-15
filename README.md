@@ -22,6 +22,25 @@ Settings (stored in `%APPDATA%\3SVerse\LinkedInPoster\config.json`): Client ID /
 
 ---
 
+## Browser Mode (v1.1.0+) — post through your own logged-in browser
+
+The official API is the default path, but the exe can also drive **the real
+LinkedIn web composer** through your own logged-in Chrome — the exact workflow
+of the Chrome Campaign Uploader extension, ported to the exe (Selenium/CDP:
+
+- **Browser Mode…** button → dialog: start date/time, dashboard URL, login
+  detection with guidance, **stop after current post**, failed→abort/resume.
+- The same locator/state engine, post sequence (create → media attach →
+  schedule date/time → caption → final Schedule), and schedule-FIRST-then-
+  caption ordering as the extension — verified by an automated mock E2E test.
+- Per-item state (completed/failed/skipped) is stored in
+  `%APPDATA%\3SVerse\LinkedInPoster\web_progress.json` — completed items
+  take precedence on resume, so a closed run never double-posts.
+- The bundled `chrome-extension/` folder is the full unmodified uploader
+  extension source (provenance noted in its README).
+
+---
+
 ## One-time setup (LinkedIn developer app)
 
 You need three things from linkedin.com/developers: **Client ID**, **Client Secret**, and the page's **Organization ID**.
